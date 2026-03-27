@@ -1,0 +1,196 @@
+/*-- scss:defaults --*/
+$font-family-sans-serif: "Inter", "Helvetica Neue", Arial, sans-serif;
+$font-family-monospace: "JetBrains Mono", "Fira Code", monospace;
+$headings-font-family: "Georgia", "Times New Roman", serif;
+$body-color: #1a1a2e;
+$link-color: #003087;
+$toc-color: #003087;
+$toc-active-border: #003087;
+
+/*-- scss:rules --*/
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:wght@700;800&display=swap');
+
+/* Overall body */
+body {
+  font-size: 1.05rem;
+  line-height: 1.8;
+  color: #1a1a2e;
+}
+
+/* Title block */
+#title-block-header {
+  background: linear-gradient(135deg, #003087 0%, #1a4a8a 60%, #0a6eb4 100%);
+  color: white;
+  padding: 4rem 3rem 3rem 3rem;
+  margin: -1.5rem -1.5rem 2.5rem -1.5rem;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 8px 32px rgba(0,48,135,0.25);
+}
+
+#title-block-header .title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 2.6rem;
+  font-weight: 800;
+  color: white !important;
+  line-height: 1.2;
+  margin-bottom: 0.5rem;
+}
+
+#title-block-header .subtitle {
+  font-size: 1.2rem;
+  color: rgba(255,255,255,0.85) !important;
+  font-style: italic;
+  font-weight: 300;
+}
+
+#title-block-header .author,
+#title-block-header .date {
+  color: rgba(255,255,255,0.75) !important;
+  font-size: 0.95rem;
+}
+
+/* Section headings */
+h1, h2 {
+  font-family: 'Playfair Display', Georgia, serif;
+  color: #003087;
+  border-bottom: 2px solid #e8eef5;
+  padding-bottom: 0.4rem;
+  margin-top: 2.5rem;
+}
+
+h3, h4 {
+  color: #1a4a8a;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+}
+
+/* TOC styling */
+#TOC {
+  background: #f8faff;
+  border-left: 4px solid #003087;
+  border-radius: 0 8px 8px 0;
+  padding: 1rem 1.2rem;
+  font-size: 0.88rem;
+}
+
+#TOC a { color: #003087; }
+#TOC a:hover { color: #0a6eb4; }
+
+/* Abstract / key findings box */
+.abstract-box {
+  background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
+  border-left: 5px solid #003087;
+  border-radius: 0 10px 10px 0;
+  padding: 1.5rem 2rem;
+  margin: 1.5rem 0 2rem 0;
+  box-shadow: 0 2px 12px rgba(0,48,135,0.08);
+}
+
+.abstract-box h4 {
+  color: #003087;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+}
+
+/* Stat highlight cards */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  border-top: 4px solid #003087;
+  text-align: center;
+}
+
+.stat-card .stat-value {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #003087;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+  font-family: 'Playfair Display', serif;
+}
+
+.stat-card .stat-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #666;
+}
+
+.stat-card.red { border-top-color: #c0392b; }
+.stat-card.red .stat-value { color: #c0392b; }
+.stat-card.green { border-top-color: #27ae60; }
+.stat-card.green .stat-value { color: #27ae60; }
+.stat-card.orange { border-top-color: #e67e22; }
+.stat-card.orange .stat-value { color: #e67e22; }
+
+/* Callout overrides */
+.callout {
+  border-radius: 8px;
+  border-left-width: 5px;
+}
+
+.callout-note { border-left-color: #003087; }
+.callout-warning { border-left-color: #e67e22; }
+.callout-important { border-left-color: #c0392b; }
+
+/* Figure captions */
+.figure-caption, figcaption {
+  font-size: 0.82rem;
+  color: #888;
+  font-style: italic;
+  margin-top: 0.4rem;
+}
+
+/* Section dividers */
+.section-divider {
+  border: none;
+  border-top: 1px solid #e8eef5;
+  margin: 2.5rem 0;
+}
+
+/* Pull quotes */
+.pull-quote {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem;
+  color: #003087;
+  border-left: 5px solid #003087;
+  padding: 0.75rem 1.5rem;
+  margin: 2rem 0;
+  font-style: italic;
+  background: #f0f4ff;
+  border-radius: 0 8px 8px 0;
+}
+
+/* Data source footnote */
+.data-source {
+  font-size: 0.78rem;
+  color: #999;
+  border-top: 1px solid #e8eef5;
+  padding-top: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+/* Table styling */
+table {
+  font-size: 0.9rem;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+thead tr { background: #003087; color: white; }
+thead th { padding: 0.6rem 1rem; font-weight: 500; }
+tbody tr:nth-child(even) { background: #f8faff; }
+tbody td { padding: 0.5rem 1rem; border-bottom: 1px solid #e8eef5; }

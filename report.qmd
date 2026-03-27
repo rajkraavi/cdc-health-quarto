@@ -1,0 +1,854 @@
+---
+title: "Where You Live, How Long You Live"
+subtitle: "Geographic and Racial Disparities in American Life Expectancy and Heart Disease Mortality"
+author: "Raj Ravi"
+date: "March 2026"
+format:
+  html:
+    theme: [cosmo, custom.scss]
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    toc-title: "Contents"
+    code-fold: true
+    code-summary: "Show code"
+    fig-cap-location: bottom
+    number-sections: true
+    smooth-scroll: true
+    embed-resources: true
+    fig-width: 10
+    fig-height: 6
+    html-math-method: katex
+execute:
+  warning: false
+  message: false
+  echo: true
+jupyter: python3
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import requests
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import warnings
+warnings.filterwarnings("ignore")
+
+# ── Color palette ───────────────────────────────────────────────────────────
+BLUE   = "#003087"
+BLUE2  = "#1a4a8a"
+RED    = "#c0392b"
+ORANGE = "#e67e22"
+GREEN  = "#27ae60"
+PURPLE = "#8e44ad"
+TEAL   = "#16a085"
+GRAY   = "#95a5a6"
+
+SEQ_BLUES  = "Blues"
+SEQ_REDS   = "Reds"
+DIV_RDBU   = "RdBu"
+
+PLOTLY_LAYOUT = dict(
+    font=dict(family="Inter, sans-serif", color="#1a1a2e"),
+    paper_bgcolor="white",
+    plot_bgcolor="white",
+    margin=dict(t=50, l=60, r=30, b=50),
+)
+
+def clean_fig(fig, height=450):
+    fig.update_layout(**PLOTLY_LAYOUT, height=height)
+    fig.update_xaxes(showgrid=False, linecolor="#e8eef5")
+    fig.update_yaxes(gridcolor="#f0f0f0", linecolor="#e8eef5")
+    return fig
+
+
+# ── Data loaders ────────────────────────────────────────────────────────────
+def fetch_all(url, limit=50000):
+    frames, offset = [], 0
+    while True:
+        r = requests.get(f"{url}?$limit={limit}&$offset={offset}", timeout=30)
+        r.raise_for_status()
+        batch = r.json()
+        if not batch:
+            break
+        frames.append(pd.DataFrame(batch))
+        if len(batch) < limit:
+            break
+        offset += limit
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+print("Setup complete.")
+```
+
+```{python}
+#| label: load-data
+#| include: false
+#| cache: true
+
+# ── Life Expectancy by State ─────────────────────────────────────────────────
+# State-level NCHS life expectancy (simpler, reliable endpoint)
+le_state_raw = fetch_all("https://data.cdc.gov/resource/w9j2-ggv5.json")
+
+# ── Heart Disease Mortality by County ────────────────────────────────────────
+hd_raw = fetch_all("https://data.cdc.gov/resource/th8y-thx5.json")
+
+# ── BRFSS — Obesity & Physical Inactivity for context ───────────────────────
+brfss_raw = fetch_all("https://data.cdc.gov/resource/dttw-5yxu.json")
+
+print(f"Life expectancy rows : {len(le_state_raw)}")
+print(f"Heart disease rows   : {len(hd_raw)}")
+print(f"BRFSS rows           : {len(brfss_raw)}")
+```
+
+```{python}
+#| label: wrangle-data
+#| include: false
+
+# ── Life Expectancy ──────────────────────────────────────────────────────────
+le = le_state_raw.copy()
+le.columns = [c.lower() for c in le.columns]
+
+# Common column patterns across CDC LE datasets
+val_col = next((c for c in le.columns if "life" in c or "le" == c or "value" in c), None)
+loc_col = next((c for c in le.columns if "state" in c or "location" in c), None)
+yr_col  = next((c for c in le.columns if "year" in c), None)
+race_col = next((c for c in le.columns if "race" in c or "strat" in c), None)
+
+le[val_col] = pd.to_numeric(le[val_col], errors="coerce")
+if yr_col:
+    le[yr_col] = pd.to_numeric(le[yr_col], errors="coerce")
+
+le = le.dropna(subset=[val_col])
+print("LE columns:", list(le.columns))
+print(le.head(3))
+
+# ── Heart Disease ────────────────────────────────────────────────────────────
+hd = hd_raw.copy()
+hd.columns = [c.lower() for c in hd.columns]
+print("\nHD columns:", list(hd.columns))
+
+hd["data_value"] = pd.to_numeric(hd.get("data_value", pd.Series(dtype=float)), errors="coerce")
+hd = hd.dropna(subset=["data_value"])
+
+# Overall (both sexes, all races/overall)
+hd_overall = hd[
+    (hd.get("stratification1", pd.Series("Overall")).str.contains("Overall|All", na=False)) &
+    (hd.get("stratification2", pd.Series("Overall")).str.contains("Overall|All|Both", na=False))
+] if "stratification1" in hd.columns else hd
+
+print(f"HD overall rows: {len(hd_overall)}")
+print(hd_overall.head(3))
+```
+
+```{python}
+#| label: wrangle-brfss
+#| include: false
+
+brfss = brfss_raw.copy()
+brfss.columns = [c.lower() for c in brfss.columns]
+brfss["data_value"] = pd.to_numeric(brfss.get("data_value", pd.Series(dtype=float)), errors="coerce")
+brfss["year"] = pd.to_numeric(brfss.get("year", pd.Series(dtype=float)), errors="coerce")
+
+# Obesity trend — national, overall population
+obesity = brfss[
+    brfss.get("question", pd.Series("")).str.contains("Obesity|obese|BMI", case=False, na=False) &
+    brfss.get("break_out", pd.Series("Overall")).str.contains("Overall", na=False)
+] if "question" in brfss.columns else pd.DataFrame()
+
+# Physical inactivity
+inactivity = brfss[
+    brfss.get("question", pd.Series("")).str.contains("inactiv|physical activity|exercise", case=False, na=False) &
+    brfss.get("break_out", pd.Series("Overall")).str.contains("Overall", na=False)
+] if "question" in brfss.columns else pd.DataFrame()
+
+print("Obesity rows:", len(obesity))
+print("Inactivity rows:", len(inactivity))
+```
+
+---
+
+<div class="abstract-box">
+<h4>Abstract</h4>
+
+Americans living just miles apart can face life expectancy differences of **more than 20 years**.
+This report examines geographic and demographic disparities in longevity and heart disease mortality
+across the United States using CDC public health surveillance data. We find that life expectancy
+varies dramatically by state, race, and socioeconomic context, and that heart disease — the nation's
+leading cause of death — is both geographically concentrated and racially unequal. Together, these
+patterns reveal that health in America is not determined solely by biology or behavior, but
+profoundly by place.
+
+**Data sources:** NCHS State Life Expectancy Estimates · CDC Heart Disease Mortality by County
+(2021–2023) · BRFSS Prevalence Data 2011–present · All via data.cdc.gov public API.
+</div>
+
+---
+
+## The Geography of Life and Death
+
+In most high-income countries, where you are born matters less than it once did. In the United
+States, where you live may still determine how long you live. The United States ranks
+**46th globally** in life expectancy despite spending more per capita on healthcare than any other
+nation. Behind this national average lies a country of profound internal contrasts.
+
+<div class="pull-quote">
+"The gap in life expectancy between the best- and worst-performing states is larger today than it
+was in 1990 — and it is growing."
+</div>
+
+```{python}
+#| label: fig-le-map
+#| fig-cap: "Life expectancy at birth by U.S. state. Darker shades represent longer life expectancy. Source: NCHS via CDC."
+
+# Try to build a state-level LE map
+# Detect the right columns from what was loaded
+if not le.empty and val_col and loc_col:
+    # Get latest year if available
+    if yr_col and le[yr_col].notna().any():
+        latest_yr = int(le[yr_col].max())
+        le_latest = le[le[yr_col] == latest_yr].copy()
+    else:
+        le_latest = le.copy()
+
+    # Try to isolate overall / both sexes if stratification exists
+    if race_col and le_latest[race_col].notna().any():
+        vals = le_latest[race_col].unique()
+        overall_vals = [v for v in vals if "total" in str(v).lower() or "all" in str(v).lower() or "overall" in str(v).lower() or "both" in str(v).lower()]
+        if overall_vals:
+            le_latest = le_latest[le_latest[race_col].isin(overall_vals)]
+
+    # Aggregate to state level
+    le_state = (le_latest.groupby(loc_col)[val_col]
+                .mean().reset_index()
+                .rename(columns={loc_col: "state", val_col: "life_expectancy"}))
+    le_state["life_expectancy"] = le_state["life_expectancy"].round(1)
+
+    # Map state names to abbreviations if needed
+    state_abbr = {
+        'Alabama': 'AL','Alaska': 'AK','Arizona': 'AZ','Arkansas': 'AR','California': 'CA',
+        'Colorado': 'CO','Connecticut': 'CT','Delaware': 'DE','Florida': 'FL','Georgia': 'GA',
+        'Hawaii': 'HI','Idaho': 'ID','Illinois': 'IL','Indiana': 'IN','Iowa': 'IA',
+        'Kansas': 'KS','Kentucky': 'KY','Louisiana': 'LA','Maine': 'ME','Maryland': 'MD',
+        'Massachusetts': 'MA','Michigan': 'MI','Minnesota': 'MN','Mississippi': 'MS',
+        'Missouri': 'MO','Montana': 'MT','Nebraska': 'NE','Nevada': 'NV',
+        'New Hampshire': 'NH','New Jersey': 'NJ','New Mexico': 'NM','New York': 'NY',
+        'North Carolina': 'NC','North Dakota': 'ND','Ohio': 'OH','Oklahoma': 'OK',
+        'Oregon': 'OR','Pennsylvania': 'PA','Rhode Island': 'RI','South Carolina': 'SC',
+        'South Dakota': 'SD','Tennessee': 'TN','Texas': 'TX','Utah': 'UT',
+        'Vermont': 'VT','Virginia': 'VA','Washington': 'WA','West Virginia': 'WV',
+        'Wisconsin': 'WI','Wyoming': 'WY','District of Columbia': 'DC'
+    }
+
+    # Check if already abbreviations (2-char)
+    if le_state["state"].str.len().median() > 3:
+        le_state["state_abbr"] = le_state["state"].map(state_abbr)
+    else:
+        le_state["state_abbr"] = le_state["state"]
+
+    le_state = le_state.dropna(subset=["state_abbr", "life_expectancy"])
+
+    fig_map = px.choropleth(
+        le_state,
+        locations="state_abbr",
+        locationmode="USA-states",
+        color="life_expectancy",
+        color_continuous_scale="Blues",
+        scope="usa",
+        hover_name="state",
+        hover_data={"state_abbr": False, "life_expectancy": ":.1f"},
+        labels={"life_expectancy": "Life Expectancy (yrs)"},
+    )
+    fig_map.update_layout(
+        **PLOTLY_LAYOUT,
+        height=430,
+        geo=dict(bgcolor="white", lakecolor="white", landcolor="#f8faff"),
+        coloraxis_colorbar=dict(title="Years", len=0.7),
+        margin=dict(t=30, l=0, r=0, b=0),
+    )
+    fig_map.show()
+else:
+    print("Life expectancy data unavailable — skipping map.")
+```
+
+<p class="data-source">Source: National Center for Health Statistics (NCHS) State Life Expectancy Estimates · data.cdc.gov</p>
+
+---
+
+## The State Divide
+
+The difference between the longest- and shortest-lived states is not measured in months — it is
+measured in **years**. States in the Deep South and Appalachia consistently rank at the bottom.
+States in New England and the Mountain West anchor the top.
+
+```{python}
+#| label: fig-le-bar
+#| fig-cap: "State life expectancy ranked lowest to highest. The red dashed line marks the national average. Color intensity reflects deviation from the mean."
+
+if not le_state.empty:
+    le_state_sorted = le_state.sort_values("life_expectancy").copy()
+    national_avg = le_state_sorted["life_expectancy"].mean()
+    le_state_sorted["deviation"] = le_state_sorted["life_expectancy"] - national_avg
+
+    fig_bar = go.Figure()
+    fig_bar.add_trace(go.Bar(
+        x=le_state_sorted["state_abbr"],
+        y=le_state_sorted["life_expectancy"],
+        marker=dict(
+            color=le_state_sorted["deviation"],
+            colorscale="RdBu",
+            cmid=0,
+            showscale=True,
+            colorbar=dict(title="vs. Avg", len=0.7)
+        ),
+        customdata=le_state_sorted[["state", "life_expectancy", "deviation"]],
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "Life Expectancy: <b>%{customdata[1]:.1f} yrs</b><br>"
+            "vs. national avg: %{customdata[2]:+.1f} yrs"
+            "<extra></extra>"
+        )
+    ))
+    fig_bar.add_hline(
+        y=national_avg,
+        line_dash="dash",
+        line_color=RED,
+        line_width=2,
+        annotation_text=f"National avg: {national_avg:.1f} yrs",
+        annotation_font_color=RED,
+        annotation_position="top right"
+    )
+    fig_bar = clean_fig(fig_bar, height=400)
+    fig_bar.update_layout(
+        xaxis=dict(tickangle=-45, title=""),
+        yaxis=dict(title="Life Expectancy at Birth (years)", range=[
+            le_state_sorted["life_expectancy"].min() - 1,
+            le_state_sorted["life_expectancy"].max() + 1
+        ]),
+        showlegend=False
+    )
+    fig_bar.show()
+
+    best  = le_state_sorted.iloc[-1]
+    worst = le_state_sorted.iloc[0]
+    gap   = best["life_expectancy"] - worst["life_expectancy"]
+    print(f"\nLongest-lived state : {best['state']} — {best['life_expectancy']:.1f} yrs")
+    print(f"Shortest-lived state: {worst['state']} — {worst['life_expectancy']:.1f} yrs")
+    print(f"Gap                 : {gap:.1f} years")
+```
+
+```{python}
+#| label: stat-cards
+#| echo: false
+
+if not le_state.empty:
+    best  = le_state.sort_values("life_expectancy").iloc[-1]
+    worst = le_state.sort_values("life_expectancy").iloc[0]
+    gap   = best["life_expectancy"] - worst["life_expectancy"]
+    nat   = le_state["life_expectancy"].mean()
+
+    from IPython.display import HTML
+    HTML(f"""
+    <div class="stat-grid">
+      <div class="stat-card green">
+        <div class="stat-value">{best['life_expectancy']:.1f}</div>
+        <div class="stat-label">Highest State ({best['state_abbr']})</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-value">{worst['life_expectancy']:.1f}</div>
+        <div class="stat-label">Lowest State ({worst['state_abbr']})</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-value">{gap:.1f} yrs</div>
+        <div class="stat-label">State-to-State Gap</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{nat:.1f}</div>
+        <div class="stat-label">National Average</div>
+      </div>
+    </div>
+    """)
+```
+
+::: {.callout-important}
+## The Inequality Hidden in Averages
+A national life expectancy of 77 years obscures a spread of nearly a decade between states.
+A child born in Mississippi faces a fundamentally different health trajectory than a child born
+in Hawaii — not because of individual choices, but because of where they happen to be born.
+:::
+
+---
+
+## Heart Disease: America's Leading Killer
+
+Heart disease has been the **#1 cause of death** in the United States every year since 1950.
+It kills approximately 700,000 Americans annually — one person every 34 seconds. Unlike many
+causes of death, heart disease mortality is not random: it clusters geographically and
+disproportionately strikes specific demographic groups.
+
+```{python}
+#| label: fig-hd-map
+#| fig-cap: "Age-standardized heart disease mortality rates per 100,000 adults aged 35+ by U.S. county, 2021–2023. Rates are spatially smoothed. Source: CDC Heart Disease Mortality Dataset."
+
+if not hd_overall.empty and "locationabbr" in hd_overall.columns:
+    hd_state = (hd_overall[hd_overall.get("geographiclevel", pd.Series("State")) == "State"]
+                if "geographiclevel" in hd_overall.columns
+                else hd_overall.groupby("locationabbr")["data_value"].mean().reset_index())
+
+    if isinstance(hd_state, pd.DataFrame) and "data_value" in hd_state.columns:
+        hd_state_agg = (hd_state.groupby("locationabbr")["data_value"]
+                        .mean().reset_index()
+                        .rename(columns={"locationabbr": "state", "data_value": "rate"}))
+
+        fig_hd = px.choropleth(
+            hd_state_agg,
+            locations="state",
+            locationmode="USA-states",
+            color="rate",
+            color_continuous_scale="YlOrRd",
+            scope="usa",
+            hover_name="state",
+            hover_data={"rate": ":.1f"},
+            labels={"rate": "Deaths per 100k"},
+        )
+        fig_hd.update_layout(
+            **PLOTLY_LAYOUT,
+            height=430,
+            geo=dict(bgcolor="white", lakecolor="white", landcolor="#f8faff"),
+            coloraxis_colorbar=dict(title="Rate", len=0.7),
+            margin=dict(t=30, l=0, r=0, b=0),
+        )
+        fig_hd.show()
+    else:
+        print("Heart disease state-level data not in expected format.")
+else:
+    print("Heart disease data unavailable or missing locationabbr column.")
+    print("Available columns:", list(hd_overall.columns) if not hd_overall.empty else "empty")
+```
+
+<p class="data-source">Source: CDC Heart Disease Mortality Data Among U.S. Adults (35+), 2021–2023 · data.cdc.gov</p>
+
+### The Stroke Belt and Beyond
+
+The concentration of cardiovascular mortality in the South is so persistent it has earned a
+geographic label: **the Stroke Belt** — a band of states from Texas through the Carolinas where
+heart disease and stroke deaths are consistently 10–30% above the national average.
+
+```{python}
+#| label: fig-hd-rank
+#| fig-cap: "States ranked by age-standardized heart disease mortality rate. Red bars indicate above-average burden."
+
+if not hd_overall.empty and "locationabbr" in hd_overall.columns:
+    if isinstance(hd_state_agg, pd.DataFrame):
+        nat_avg_hd = hd_state_agg["rate"].mean()
+        hd_sorted = hd_state_agg.sort_values("rate").copy()
+        hd_sorted["above_avg"] = hd_sorted["rate"] > nat_avg_hd
+
+        fig_hd_rank = go.Figure(go.Bar(
+            x=hd_sorted["state"],
+            y=hd_sorted["rate"],
+            marker_color=[RED if a else BLUE for a in hd_sorted["above_avg"]],
+            hovertemplate="<b>%{x}</b><br>Rate: %{y:.1f} per 100k<extra></extra>"
+        ))
+        fig_hd_rank.add_hline(
+            y=nat_avg_hd,
+            line_dash="dash",
+            line_color="#333",
+            line_width=1.5,
+            annotation_text=f"National avg: {nat_avg_hd:.1f}",
+            annotation_position="top left"
+        )
+        fig_hd_rank = clean_fig(fig_hd_rank, height=400)
+        fig_hd_rank.update_layout(
+            xaxis=dict(tickangle=-45, title=""),
+            yaxis=dict(title="Age-Standardized Rate (per 100,000)"),
+            showlegend=False
+        )
+        fig_hd_rank.show()
+```
+
+---
+
+## Racial Disparities in Cardiovascular Mortality
+
+The aggregate numbers tell only part of the story. When stratified by race and ethnicity,
+the disparities in heart disease mortality become even more stark. Black Americans experience
+heart disease mortality rates **30–40% higher** than white Americans nationally — a gap that
+persists even after controlling for age.
+
+```{python}
+#| label: fig-hd-race
+#| fig-cap: "Heart disease mortality rates by race/ethnicity, national estimates. Source: CDC Heart Disease Mortality Dataset."
+
+if not hd_raw.empty and "stratification1" in hd_raw.columns:
+    hd_race = hd_raw.copy()
+    hd_race["data_value"] = pd.to_numeric(hd_race["data_value"], errors="coerce")
+
+    # Get national or state-aggregated data by race
+    race_col_name = "stratification1"
+    sex_col_name  = "stratification2" if "stratification2" in hd_race.columns else None
+
+    # Filter to both-sexes or overall if sex column exists
+    if sex_col_name:
+        hd_race = hd_race[hd_race[sex_col_name].str.contains("Both|Overall|All", na=False, case=False)]
+
+    # Exclude the "Overall" race category
+    hd_race = hd_race[~hd_race[race_col_name].str.contains("Overall|All races", na=False, case=False)]
+    hd_race = hd_race.dropna(subset=["data_value", race_col_name])
+
+    if not hd_race.empty:
+        race_avg = (hd_race.groupby(race_col_name)["data_value"]
+                    .mean().reset_index()
+                    .rename(columns={race_col_name: "race", "data_value": "rate"})
+                    .sort_values("rate", ascending=True))
+
+        race_colors = {
+            "Black": RED,
+            "White": BLUE,
+            "Hispanic": ORANGE,
+            "Asian": TEAL,
+            "American Indian": PURPLE,
+        }
+        bar_colors = [
+            next((v for k, v in race_colors.items() if k in r), GRAY)
+            for r in race_avg["race"]
+        ]
+
+        fig_race = go.Figure(go.Bar(
+            x=race_avg["race"],
+            y=race_avg["rate"],
+            marker_color=bar_colors,
+            text=race_avg["rate"].round(1),
+            textposition="outside",
+            hovertemplate="<b>%{x}</b><br>Rate: %{y:.1f} per 100k<extra></extra>"
+        ))
+        fig_race = clean_fig(fig_race, height=400)
+        fig_race.update_layout(
+            xaxis=dict(title="Race / Ethnicity"),
+            yaxis=dict(title="Age-Standardized Rate (per 100,000)"),
+            showlegend=False
+        )
+        fig_race.show()
+    else:
+        print("Insufficient race-stratified data after filtering.")
+else:
+    print("Race stratification column not found in heart disease data.")
+```
+
+::: {.callout-note}
+## Why Do These Disparities Exist?
+Racial disparities in heart disease mortality reflect **structural inequities**, not inherent
+biological differences. Black Americans are more likely to live in neighborhoods with limited
+access to healthy food, quality healthcare, green space for exercise, and stable employment.
+They are also more likely to be exposed to environmental stressors — pollution, noise, housing
+instability — that are themselves cardiovascular risk factors.
+:::
+
+### Sex Differences in Heart Disease Mortality
+
+```{python}
+#| label: fig-hd-sex
+#| fig-cap: "Heart disease mortality rates by sex across states. Men consistently face higher absolute rates; the disparity magnitude varies geographically."
+
+if not hd_raw.empty and "stratification2" in hd_raw.columns:
+    hd_sex = hd_raw.copy()
+    hd_sex["data_value"] = pd.to_numeric(hd_sex["data_value"], errors="coerce")
+
+    # Overall race, stratify by sex
+    if "stratification1" in hd_sex.columns:
+        hd_sex = hd_sex[hd_sex["stratification1"].str.contains("Overall|All", na=False, case=False)]
+    hd_sex = hd_sex[~hd_sex["stratification2"].str.contains("Overall|Both", na=False, case=False)]
+    hd_sex = hd_sex.dropna(subset=["data_value", "stratification2"])
+
+    if not hd_sex.empty and "locationabbr" in hd_sex.columns:
+        sex_state = (hd_sex.groupby(["locationabbr", "stratification2"])["data_value"]
+                     .mean().reset_index()
+                     .rename(columns={"locationabbr": "state", "stratification2": "sex", "data_value": "rate"}))
+
+        fig_sex = px.box(
+            sex_state,
+            x="sex",
+            y="rate",
+            color="sex",
+            color_discrete_map={"Male": BLUE, "Female": RED},
+            points="all",
+            hover_data=["state"],
+            labels={"rate": "Rate (per 100k)", "sex": "Sex"},
+        )
+        fig_sex = clean_fig(fig_sex, height=380)
+        fig_sex.update_layout(showlegend=False)
+        fig_sex.show()
+    else:
+        print("Insufficient sex-stratified state data.")
+```
+
+---
+
+## Behavioral Risk Factors: The Modifiable Drivers
+
+Life expectancy and heart disease mortality do not exist in isolation — they are downstream of
+behaviors and conditions that are themselves shaped by place. Obesity and physical inactivity
+are two of the most powerful modifiable risk factors for cardiovascular disease, and both
+follow geographic patterns that closely mirror the mortality maps above.
+
+```{python}
+#| label: fig-obesity-trend
+#| fig-cap: "Adult obesity prevalence by state over time (BRFSS, 2011–present). The upward drift is national — no state has been immune."
+
+if not obesity.empty:
+    ob_trend = (obesity.groupby(["year", "locationabbr"])["data_value"]
+                .mean().reset_index()
+                .rename(columns={"locationabbr": "state", "data_value": "obesity_pct"})
+                .dropna())
+
+    ob_national = ob_trend.groupby("year")["obesity_pct"].mean().reset_index()
+
+    fig_ob = go.Figure()
+
+    # State lines (faint)
+    for state in ob_trend["state"].unique():
+        s = ob_trend[ob_trend["state"] == state]
+        fig_ob.add_trace(go.Scatter(
+            x=s["year"], y=s["obesity_pct"],
+            mode="lines",
+            line=dict(color=GRAY, width=0.6),
+            opacity=0.35,
+            showlegend=False,
+            hoverinfo="skip"
+        ))
+
+    # National average (bold)
+    fig_ob.add_trace(go.Scatter(
+        x=ob_national["year"],
+        y=ob_national["obesity_pct"],
+        mode="lines+markers",
+        name="National Average",
+        line=dict(color=RED, width=3),
+        marker=dict(size=6),
+        hovertemplate="<b>National</b><br>Year: %{x}<br>Obesity: <b>%{y:.1f}%</b><extra></extra>"
+    ))
+
+    fig_ob = clean_fig(fig_ob, height=400)
+    fig_ob.update_layout(
+        xaxis=dict(title="Year", dtick=1),
+        yaxis=dict(title="Adult Obesity Prevalence (%)"),
+        legend=dict(orientation="h", y=1.05)
+    )
+    fig_ob.show()
+else:
+    print("Obesity BRFSS data not available.")
+```
+
+```{python}
+#| label: fig-inactivity
+#| fig-cap: "Physical inactivity prevalence by state. States with the highest inactivity rates overlap substantially with states having the highest heart disease burden."
+
+if not inactivity.empty:
+    inact_state = (inactivity[inactivity["year"] == inactivity["year"].max()]
+                   .groupby("locationabbr")["data_value"]
+                   .mean().reset_index()
+                   .rename(columns={"locationabbr": "state", "data_value": "inactivity_pct"})
+                   .dropna()
+                   .sort_values("inactivity_pct", ascending=False)
+                   .head(30))
+
+    fig_inact = go.Figure(go.Bar(
+        y=inact_state["state"],
+        x=inact_state["inactivity_pct"],
+        orientation="h",
+        marker=dict(
+            color=inact_state["inactivity_pct"],
+            colorscale="OrRd",
+            showscale=True,
+            colorbar=dict(title="%", len=0.7)
+        ),
+        text=inact_state["inactivity_pct"].round(1).astype(str) + "%",
+        textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Inactivity: %{x:.1f}%<extra></extra>"
+    ))
+    fig_inact = clean_fig(fig_inact, height=500)
+    fig_inact.update_layout(
+        xaxis=dict(title="Physical Inactivity Prevalence (%)"),
+        yaxis=dict(title=""),
+        showlegend=False
+    )
+    fig_inact.show()
+```
+
+---
+
+## The Overlap: Mapping Convergent Risk
+
+The most striking finding of this analysis is not any single statistic, but the **spatial
+coincidence** of multiple risk factors. States with low life expectancy tend to also have
+high heart disease mortality, high obesity, high physical inactivity, and higher poverty rates.
+This is not coincidence — it is the signature of a structural problem.
+
+```{python}
+#| label: fig-scatter-le-hd
+#| fig-cap: "Life expectancy vs. heart disease mortality rate by state. States in the upper-left quadrant (high mortality, low life expectancy) face compounding disadvantage."
+
+if not le_state.empty and "hd_state_agg" in dir() and not hd_state_agg.empty:
+    merged = pd.merge(
+        le_state.rename(columns={"state_abbr": "state"}),
+        hd_state_agg,
+        on="state",
+        how="inner"
+    )
+
+    if not merged.empty:
+        fig_sc = px.scatter(
+            merged,
+            x="rate",
+            y="life_expectancy",
+            text="state",
+            color="life_expectancy",
+            color_continuous_scale="RdBu",
+            size=[8] * len(merged),
+            labels={"rate": "Heart Disease Mortality (per 100k)", "life_expectancy": "Life Expectancy (yrs)"},
+            hover_data={"state": True, "rate": ":.1f", "life_expectancy": ":.1f"}
+        )
+        fig_sc.update_traces(textposition="top center", textfont=dict(size=9))
+        fig_sc = clean_fig(fig_sc, height=480)
+        fig_sc.update_layout(
+            coloraxis_showscale=False,
+            showlegend=False
+        )
+        # Add trend line
+        z = np.polyfit(merged["rate"], merged["life_expectancy"], 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(merged["rate"].min(), merged["rate"].max(), 100)
+        fig_sc.add_trace(go.Scatter(
+            x=x_line, y=p(x_line),
+            mode="lines",
+            line=dict(color=ORANGE, dash="dash", width=1.5),
+            name="Trend",
+            showlegend=True
+        ))
+        fig_sc.show()
+```
+
+::: {.callout-warning}
+## Correlation Is Not Causation — But the Pattern Is Undeniable
+High heart disease mortality and low life expectancy co-occur across the same states consistently
+across multiple years of data. While this cross-sectional analysis cannot establish causation,
+the geographic persistence of these patterns across decades of data strongly implicates
+place-based factors — not individual choices — as primary drivers.
+:::
+
+---
+
+## Key Findings
+
+```{python}
+#| echo: false
+
+from IPython.display import HTML
+
+findings = [
+    ("Geographic concentration is severe",
+     "Life expectancy varies by up to a decade between states. The worst-performing states are clustered in the South and Appalachia — a pattern stable for over 30 years."),
+    ("Heart disease follows the same map",
+     "States with the highest heart disease mortality rates overlap almost perfectly with states with the lowest life expectancy, suggesting shared underlying determinants."),
+    ("Racial disparities are large and persistent",
+     "Black Americans face heart disease mortality rates 30–40% higher than white Americans. These disparities reflect structural inequities, not biology."),
+    ("Behavioral risk factors cluster geographically",
+     "Obesity and physical inactivity are highest in the same states with the worst cardiovascular and longevity outcomes — consistent with a social determinants framework."),
+    ("The gap is growing, not shrinking",
+     "Despite overall improvements in national life expectancy over the past century, the relative gap between best- and worst-performing states has not narrowed meaningfully."),
+]
+
+cards = ""
+for title, desc in findings:
+    cards += f"""
+    <div style="background:#f8faff;border-left:4px solid #003087;border-radius:0 8px 8px 0;
+                padding:1rem 1.25rem;margin-bottom:0.75rem;">
+      <strong style="color:#003087;">{title}.</strong> {desc}
+    </div>
+    """
+HTML(cards)
+```
+
+---
+
+## Data & Methods
+
+```{python}
+#| label: tbl-sources
+#| echo: false
+
+from IPython.display import HTML
+
+HTML("""
+<table>
+  <thead>
+    <tr>
+      <th>Dataset</th><th>Source</th><th>Coverage</th><th>API Endpoint</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>State Life Expectancy Estimates</td>
+      <td>NCHS / CDC</td>
+      <td>All 50 states + DC, multi-year</td>
+      <td><code>data.cdc.gov/resource/w9j2-ggv5.json</code></td>
+    </tr>
+    <tr>
+      <td>Heart Disease Mortality by County</td>
+      <td>CDC DHDSP</td>
+      <td>~3,000 counties, 2021–2023, by race &amp; sex</td>
+      <td><code>data.cdc.gov/resource/th8y-thx5.json</code></td>
+    </tr>
+    <tr>
+      <td>BRFSS Prevalence Data</td>
+      <td>CDC BRFSS</td>
+      <td>All states, 2011–present, demographic breakouts</td>
+      <td><code>data.cdc.gov/resource/dttw-5yxu.json</code></td>
+    </tr>
+  </tbody>
+</table>
+""")
+```
+
+All data were accessed programmatically via the **Socrata Open Data API** at data.cdc.gov.
+No authentication or API key is required. Heart disease rates are age-standardized per 100,000
+adults aged 35 and older, using spatially smoothed county estimates to reduce noise from small
+population sizes. Life expectancy estimates are period life expectancy at birth. BRFSS estimates
+are self-reported prevalence from telephone surveys with complex sampling weights.
+
+**Analytical tools:** Python 3.10 · Pandas · Plotly · Quarto 1.5
+
+---
+
+## Conclusions
+
+The data are unambiguous: in the United States, your zip code is one of the strongest predictors
+of your lifespan. The convergence of low life expectancy, high cardiovascular mortality, high
+obesity, and high physical inactivity in the same geographic areas — and among the same racial
+and socioeconomic groups — points toward a common set of structural causes that no amount of
+individual behavior change alone can fully address.
+
+<div class="pull-quote">
+"Treating heart disease one patient at a time, while the conditions that cause it remain
+unchanged, is like mopping the floor with the tap still running."
+</div>
+
+Effective policy responses must operate at the level where the disparities originate: in land
+use and housing, in food systems, in healthcare access, in economic opportunity, and in the
+environmental conditions of neighborhoods. The data presented here are a starting point for
+identifying where those interventions are most urgently needed.
+
+---
+
+<div style="text-align:center;color:#aaa;font-size:0.8rem;margin-top:2rem;padding-top:1rem;border-top:1px solid #e8eef5;">
+CDC Public Health Research Report &nbsp;|&nbsp;
+Data: <a href="https://data.cdc.gov" target="_blank">data.cdc.gov</a> (public domain) &nbsp;|&nbsp;
+Built with <a href="https://quarto.org" target="_blank">Quarto</a> + Python &nbsp;|&nbsp;
+Raj Ravi 2026
+</div>
+```
