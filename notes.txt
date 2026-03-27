@@ -1,0 +1,137 @@
+CDC Life Expectancy & Heart Disease — Quarto Research Report
+=============================================================
+Posit Demo | Author: Raj Ravi
+
+
+WHAT IS QUARTO?
+---------------
+Quarto is an open-source scientific and technical publishing system built by Posit. It is the
+next generation of R Markdown — but it is not just for R anymore. Quarto works with Python,
+R, Julia, and Observable JavaScript, in any editor or IDE you already use.
+
+Think of it this way: you write your analysis in code, your narrative in plain text, and Quarto
+handles the rest — weaving them together into a beautiful, publication-ready document.
+
+
+WHY QUARTO IS EXTRAORDINARY
+-----------------------------
+Most tools force a choice: either write code or write a document. Quarto eliminates that choice.
+
+You write one .qmd file. Inside it, your Python or R code runs live, your charts render inline,
+your tables format automatically, and your narrative wraps around all of it. The result is a
+document where the data, the analysis, and the story are inseparable — and always in sync.
+
+If your data changes, you re-render. Everything updates. No copy-pasting charts into PowerPoint.
+No manually updating numbers in a Word doc. No broken screenshots. The document IS the analysis.
+
+
+OUTPUT FORMATS — ONE SOURCE, MANY DESTINATIONS
+------------------------------------------------
+This is where Quarto genuinely stands apart. A single .qmd file can render into:
+
+  HTML Report         — interactive, scrollable, shareable via a link
+  PDF / LaTeX         — publication-quality, journal-submission ready
+  Word Document       — for collaborators who live in Microsoft Office
+  Reveal.js Slides    — interactive presentations, in the browser
+  Beamer Slides       — PDF slide decks for academic conferences
+  Epub / Book         — multi-chapter digital books (quarto.org is itself a Quarto book)
+  Dashboard           — Shiny-powered or static data dashboards
+  Website             — multi-page sites with navigation, search, and theming
+  Blog                — posts with tags, dates, categories, RSS feed
+  Academic Article    — LaTeX templates for Nature, PLOS, JASA, and 40+ journals
+
+You do not learn a new tool for each format. You learn Quarto once. You change one line in
+the YAML header and re-render.
+
+
+NOT JUST R — TRULY LANGUAGE AGNOSTIC
+--------------------------------------
+R Markdown was R-first. Quarto was built language-first.
+
+  Python    — runs via Jupyter kernel; works with Pandas, Plotly, Matplotlib, Seaborn,
+               scikit-learn, and every Python library you already use
+  R         — runs via knitr; full compatibility with ggplot2, Shiny, tidyverse, gt
+  Julia     — first-class support via IJulia kernel
+  SQL       — embed SQL chunks directly alongside Python or R code
+  Observable JS — client-side interactive visualizations with no server required
+  Bash / Shell  — terminal output can be captured and displayed inline
+
+A team of R developers and Python developers can collaborate on the same Quarto document.
+Each person writes in the language they know. The output is unified.
+
+
+WORKS IN ANY IDE OR EDITOR
+----------------------------
+Quarto is not locked to any one environment.
+
+  VS Code       — Quarto extension provides live preview, syntax highlighting, and render
+  RStudio       — native Quarto support, visual editor, integrated preview pane
+  Positron      — Posit's new IDE, built for Python and R, with Quarto first-class
+  JupyterLab    — render .qmd files directly from Jupyter
+  Neovim        — quarto-nvim plugin for terminal-first workflows
+  Any editor    — .qmd files are plain text; render via CLI from any terminal
+
+The CLI is: quarto render report.qmd
+That is it. One command, from any shell, in any environment.
+
+
+FOR RESEARCH AND ACADEMIC PUBLISHING
+--------------------------------------
+Quarto was built with scientific publishing in mind. It supports:
+
+  Citations & Bibliography  — cite with @key syntax; BibTeX, CSL, and Zotero supported
+  Cross-references          — @fig-map, @tbl-sources, @eq-model auto-number and link
+  Equations                 — LaTeX math inline ($E = mc^2$) and display blocks
+  Theorems & Proofs         — numbered environments for formal mathematical writing
+  Journal Templates         — pre-built LaTeX templates for 40+ academic journals
+                              including PLOS ONE, JASA, Elsevier, ACS, and more
+  Footnotes & Margin Notes  — rich annotation support
+  Appendices                — structured multi-section documents
+
+A researcher can write the entire lifecycle of a paper in one .qmd file:
+  exploratory analysis → findings → manuscript → submission-ready PDF
+All from the same source. No reformatting. No copy errors.
+
+
+REPRODUCIBILITY — THE ACADEMIC GOLD STANDARD
+---------------------------------------------
+The defining feature of a Quarto report is that it is fully reproducible. Every number, every
+chart, every table in the document is generated live from the code and data. A reader can clone
+the repository, run quarto render, and get the exact same document.
+
+This is the standard that peer-reviewed research demands — and almost no other publishing
+workflow delivers it. Quarto makes reproducibility the default, not the exception.
+
+
+DEPLOYMENT VIA POSIT CONNECT
+------------------------------
+A Quarto report is not just a file you email around. It can be published as a live URL.
+
+  quarto publish connect report.qmd
+
+Posit Connect hosts it, schedules automatic re-renders when data changes, controls who can
+access it, and gives it a branded URL. A report that was a static PDF attachment becomes a
+living document that updates itself.
+
+This is the bridge between research and operations — the same Quarto document that a data
+scientist writes in VS Code or RStudio becomes the executive dashboard that a director
+reads in their browser, always current, always correct.
+
+
+THIS REPORT
+-----------
+This CDC Life Expectancy & Heart Disease report demonstrates Quarto in practice:
+
+  Language    : Python (Pandas, Plotly, NumPy, Requests)
+  Format      : HTML with custom SCSS theme
+  Data        : Live CDC public API — no static files, no manual downloads
+  Charts      : Interactive Plotly (hover, zoom, filter in the browser)
+  Styling     : Custom research-paper aesthetic — serif headings, stat cards,
+                pull quotes, callout boxes, gradient title block
+  Structure   : Abstract → Findings → Maps → Disparities → Behavioral Risk →
+                Convergence Analysis → Methods → Conclusions
+
+The same .qmd file could render to a PDF for journal submission, a Word doc for a
+collaborator, or a slide deck for a conference — with one line changed in the YAML header.
+
+That is the power of Quarto.
